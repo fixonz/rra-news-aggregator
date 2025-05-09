@@ -3,8 +3,8 @@ import './globals.css'
 
 export const metadata: Metadata = {
   title: 'RRA NEWS AGGREGATOR',
-  description: 'Created with v0',
-  generator: 'v0.dev',
+  description: 'UnderDev | RRA NEWS AGGREGATOR',
+  generator: '',
   icons: {
     icon: '/placeholder-logo.png',
   },
