@@ -13,6 +13,7 @@ interface NewsItem {
   isPriceImpacting: boolean
   sourceCount?: number
   aggregatedSources?: string[]
+  impactPercentage?: number; // New field for impact percentage
 }
 
 interface SocialPost {
@@ -31,7 +32,6 @@ interface FearGreed {
   last_updated: string
 }
 
-// The main FeedItem interface expected from the unified API
 interface FeedItem {
   id: string;
   title: string;
@@ -42,24 +42,20 @@ interface FeedItem {
   isPriceImpacting: boolean;
   sourceCount?: number;
   aggregatedSources?: string[];
-  author?: string; // Keep for potential display (e.g., TG channel name)
+  author?: string;
   authorId?: string;
-  itemType: 'news' | 'social'; // Keep to distinguish if needed
-  similarTitles?: { source: string, title: string }[]; // Ensure this exists
-  categories?: string[]; // For category filtering
-  sentiment?: 'positive' | 'negative' | 'neutral'; // For sentiment display
-  sentimentConfidence?: number; // New field for sentiment confidence
-  sentimentTerms?: string[]; // New field for sentiment terms
+  itemType: 'news' | 'social';
+  similarTitles?: { source: string, title: string }[];
+  categories?: string[];
+  impactPercentage?: number; // Replace sentiment with impact percentage
 }
 
-// --- Define Props for NewsFeed --- 
 interface NewsFeedProps {
   filterTerm: string;
   refreshTrigger: number;
   theme?: "amber" | "green" | "blue";
 }
 
-// --- Console Log Types ---
 type ConsoleLogType = 'info' | 'warn' | 'error';
 interface ConsoleLog {
   type: ConsoleLogType;
@@ -68,7 +64,6 @@ interface ConsoleLog {
 }
 
 export default function NewsFeed({ filterTerm, refreshTrigger, theme = "amber" }: NewsFeedProps) {
-  // Simplify state: only need combined feed items
   const [feedItems, setFeedItems] = useState<FeedItem[]>([]);
   const [fearGreed, setFearGreed] = useState<FearGreed | null>(null);
   const [loading, setLoading] = useState(true);
@@ -78,18 +73,14 @@ export default function NewsFeed({ filterTerm, refreshTrigger, theme = "amber" }
   const [timeDisplayMode, setTimeDisplayMode] = useState<'relative' | 'absolute'>('relative');
   const [focusedIndex, setFocusedIndex] = useState<number>(-1);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
-  const [selectedSentiment, setSelectedSentiment] = useState<'positive' | 'negative' | 'neutral' | null>(null);
   const [showFilters, setShowFilters] = useState(false);
 
-  // Refs for table elements
   const tableBodyRef = useRef<HTMLTableSectionElement | null>(null);
   const rowRefs = useRef<(HTMLTableRowElement | null)[]>([]);
 
-  // --- Console Log State ---
   const [consoleLogs, setConsoleLogs] = useState<ConsoleLog[]>([]);
   const MAX_LOGS = 10;
 
-  // Helper to add a log message
   const addConsoleLog = useCallback((message: string, type: ConsoleLogType = 'info') => {
     setConsoleLogs(prev => {
       const now = new Date();
@@ -100,7 +91,6 @@ export default function NewsFeed({ filterTerm, refreshTrigger, theme = "amber" }
     });
   }, []);
 
-  // --- Add logs at key lifecycle points ---
   useEffect(() => {
     addConsoleLog(`Refresh triggered (${typeof refreshTrigger}): ${refreshTrigger}`);
   }, [refreshTrigger, addConsoleLog]);
@@ -161,14 +151,10 @@ export default function NewsFeed({ filterTerm, refreshTrigger, theme = "amber" }
       fetchData();
     }
 
-    // Automatic refresh interval - increased to reduce server load (every 5 minutes)
     const interval = setInterval(async () => {
       console.log("[NewsFeed Interval] Triggering background refresh...");
       const fetchData = async () => {
         try {
-          // Don't set loading state for background refreshes
-          const silentRefresh = true;
-          
           let combinedData: { posts: FeedItem[], error?: string } = { posts: [] };
           let fearGreedData: FearGreed | null = null;
           const [feedResult, fgResult] = await Promise.allSettled([
@@ -176,158 +162,82 @@ export default function NewsFeed({ filterTerm, refreshTrigger, theme = "amber" }
             fetch("/api/fear-greed")
           ]);
           
-          // Process results as before...
-          // But only update state if data is actually new or different
           if (feedResult.status === 'fulfilled' && feedResult.value.ok) {
             combinedData = await feedResult.value.json();
             if (!combinedData.error) {
-              // Only update UI if we have new data (compare lengths as a simple check)
               if (combinedData.posts?.length !== feedItems.length) {
                 setFeedItems(combinedData.posts || []);
                 setTotalCount(combinedData.posts?.length || 0);
                 console.log("[NewsFeed] Silent refresh - updated with new data");
-          } else {
+              } else {
                 console.log("[NewsFeed] Silent refresh - no changes detected");
               }
             }
           }
-          
-          // Similar logic for fear & greed data...
-          
         } catch (error) {
           console.error("Background refresh failed:", error);
-          // Don't update error state for background refreshes
         }
       };
-      
       await fetchData();
-    }, 300000); // 5 minutes
+    }, 300000);
     
     return () => clearInterval(interval);
-  }, [refreshTrigger, feedItems.length]); // Add feedItems.length to dependencies
+  }, [refreshTrigger, feedItems.length]);
 
-  // Use feedItems directly for rendering logic
-  const combinedFeed = feedItems; // Rename for less code change below, but it's feedItems now
-
-  // Reset focus when data reloads or filter changes
   useEffect(() => {
     setFocusedIndex(-1);
-    // Reset row refs on data change
-    rowRefs.current = []; 
+    rowRefs.current = [];
   }, [feedItems, filterTerm]);
 
-  // Enhanced filtering logic
   const filteredFeed = useMemo(() => {
-    // Debug logging for filter process
     console.log(`[Filtering] Starting with ${feedItems.length} items, filter: "${filterTerm}"`);
-    
     const filtered = feedItems.filter(item => {
-      // Text filter - improved to be more robust
-      const matchesText = !filterTerm || ((): boolean => {
-        // Convert search term to lowercase
+      const matchesText = !filterTerm || (() => {
         const term = filterTerm.toLowerCase().trim();
         if (!term) return true;
-        
-        // Helper for checking text fields
-        const check = (str: string | undefined) => {
-          if (!str) return false;
-          
-          // For very short search terms (2-3 chars), only match word boundaries or beginnings
-          if (term.length <= 3) {
-            // Match only at word boundaries or start of string
-            const regex = new RegExp(`(^|\\s|[^a-zA-Z])${term}`, 'i');
-            return regex.test(str);
-          }
-          
-          // For longer search terms, allow substring matches
-          return str.toLowerCase().includes(term);
-        };
-        
-        // Check all text fields
-        if (check(item.title)) {
-          console.log(`[Filter Match] "${item.title?.substring(0, 30)}..." matches "${filterTerm}"`);
-          return true;
-        }
-        
-        if (check(item.summary)) return true;
-        if (check(item.source)) return true;
-        if (check(item.author)) return true;
-        
-        // Check aggregated sources
-        if (item.aggregatedSources && item.aggregatedSources.some(s => s.toLowerCase().includes(term))) {
-          return true;
-        }
-        
-        // No match found for this item
-        return false;
+        const check = (str: string | undefined) => str?.toLowerCase().includes(term) || false;
+        return check(item.title) || check(item.summary) || check(item.source) || check(item.author) || (item.aggregatedSources?.some(s => check(s)) || false);
       })();
-      
-      // Category filter
-      const matchesCategory = !selectedCategory || 
-        (item.categories && item.categories.includes(selectedCategory));
-      
-      // Sentiment filter
-      const matchesSentiment = !selectedSentiment || 
-        item.sentiment === selectedSentiment;
-      
-      return matchesText && matchesCategory && matchesSentiment;
+      const matchesCategory = !selectedCategory || (item.categories && item.categories.includes(selectedCategory));
+      return matchesText && matchesCategory;
     });
-    
     console.log(`[Filtering] Result: ${filtered.length} items after filtering`);
     return filtered;
-  }, [feedItems, filterTerm, selectedCategory, selectedSentiment]);
-  
-  // Get unique categories from all items for filter dropdown
+  }, [feedItems, filterTerm, selectedCategory]);
+
   const allCategories = useMemo(() => {
     const categories = new Set<string>();
-    feedItems.forEach(item => {
-      (item.categories || []).forEach(cat => categories.add(cat));
-    });
+    feedItems.forEach(item => (item.categories || []).forEach(cat => categories.add(cat)));
     return Array.from(categories).sort();
   }, [feedItems]);
-  
-  // Filter reset helper
+
   const resetFilters = () => {
     setSelectedCategory(null);
-    setSelectedSentiment(null);
   };
-  
-  // Toggle filters visibility
+
   const toggleFilters = () => {
     setShowFilters(!showFilters);
   };
 
-  // --- Relative Time Function (Updated Threshold) --- 
   const formatRelativeTime = (dateString: string): string => {
     if (!dateString) return "";
     try {
-        const date = new Date(dateString);
-        const now = new Date();
-        const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
-
-        if (diffInSeconds < 5) return "now";
-        if (diffInSeconds < 60) return `${diffInSeconds}s ago`;
-        const diffInMinutes = Math.floor(diffInSeconds / 60);
-        if (diffInMinutes < 60) return `${diffInMinutes}m ago`;
-        const diffInHours = Math.floor(diffInMinutes / 60);
-        // Only show relative hours up to 24 hours
-        if (diffInHours < 24) return `${diffInHours}h ago`; 
-        // Removed day logic, fallback to absolute date/time for >= 24 hours
-        // const diffInDays = Math.floor(diffInHours / 24);
-        // if (diffInDays === 1) return `Yesterday`;
-        // if (diffInDays < 7) return `${diffInDays}d ago`;
-        
-        // Fallback to MM/DD/YY HH:MM for older items
-        return date.toLocaleDateString("en-US", { month: '2-digit', day: '2-digit', year: '2-digit' }) + 
-               " " + 
-               date.toLocaleTimeString("en-US", { hour: '2-digit', minute: '2-digit', hour12: false }); 
+      const date = new Date(dateString);
+      const now = new Date();
+      const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+      if (diffInSeconds < 5) return "now";
+      if (diffInSeconds < 60) return `${diffInSeconds}s ago`;
+      const diffInMinutes = Math.floor(diffInSeconds / 60);
+      if (diffInMinutes < 60) return `${diffInMinutes}m ago`;
+      const diffInHours = Math.floor(diffInMinutes / 60);
+      if (diffInHours < 24) return `${diffInHours}h ago`;
+      return date.toLocaleDateString("en-US", { month: '2-digit', day: '2-digit', year: '2-digit' }) + " " + date.toLocaleTimeString("en-US", { hour: '2-digit', minute: '2-digit', hour12: false });
     } catch (e) {
-        console.error("Error formatting relative time for:", dateString, e);
-        return dateString;
+      console.error("Error formatting relative time for:", dateString, e);
+      return dateString;
     }
   };
 
-  // --- Date/Time Formatters (Keep for tooltips/fallback) ---
   const formatDate = (dateString: string): string => {
     if (!dateString) return "--/--/--";
     try { return new Date(dateString).toLocaleDateString("en-US", { month: '2-digit', day: '2-digit', year: '2-digit' }); } catch { return "--/--/--"; }
@@ -337,54 +247,42 @@ export default function NewsFeed({ filterTerm, refreshTrigger, theme = "amber" }
     try { return new Date(dateString).toLocaleTimeString("en-US", { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }); } catch { return "--:--:--"; }
   };
 
-  // Toggle function for time display
   const toggleTimeDisplay = () => {
     setTimeDisplayMode(prev => prev === 'relative' ? 'absolute' : 'relative');
   };
 
-  // --- Focus Handling & Keyboard Navigation --- 
   const handleKeyDown = useCallback((event: React.KeyboardEvent<HTMLTableSectionElement>) => {
     if (!filteredFeed || filteredFeed.length === 0) return;
-
     let newIndex = focusedIndex;
-
     if (event.key === "ArrowDown") {
-      event.preventDefault(); // Prevent page scroll
+      event.preventDefault();
       newIndex = focusedIndex === -1 ? 0 : Math.min(focusedIndex + 1, filteredFeed.length - 1);
     } else if (event.key === "ArrowUp") {
-      event.preventDefault(); // Prevent page scroll
+      event.preventDefault();
       newIndex = focusedIndex <= 0 ? 0 : focusedIndex - 1;
     } else if (event.key === "Enter") {
       if (focusedIndex !== -1 && filteredFeed[focusedIndex]) {
         const item = filteredFeed[focusedIndex];
-        const key = `news-item-${item.id ? String(item.id).replace(/[^\w-]/g, '-') + `-${focusedIndex}` : `idx-${focusedIndex}`}`; 
-        toggleExpand(key); 
+        const key = `news-item-${item.id ? String(item.id).replace(/[^\w-]/g, '-') + `-${focusedIndex}` : `idx-${focusedIndex}`}`;
+        toggleExpand(key);
       }
-      return; // Don't change focus on Enter
+      return;
     } else {
-        return; // Ignore other keys
+      return;
     }
-
     if (newIndex !== focusedIndex) {
       setFocusedIndex(newIndex);
-      // Focus and scroll the new row into view
       const targetRow = rowRefs.current[newIndex];
-      if (targetRow) {
-          // targetRow.focus(); // Programmatic focus can be jarring, let's rely on visual + scroll for now
-          targetRow.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-      }
+      if (targetRow) targetRow.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     }
-  }, [focusedIndex, filteredFeed.length]); // Include filteredFeed.length in dependencies
+  }, [focusedIndex, filteredFeed.length]);
 
-  // --- Helper Functions (formatters, toggleExpand - ADD toggleExpand back) ---
   const toggleExpand = (id: string) => { 
-      setExpandedItems(prev => ({ ...prev, [id]: !prev[id] })); 
-      // Find index of item being toggled to set focus
-      const index = filteredFeed.findIndex(item => String(item.id || '') === id); 
-      setFocusedIndex(index);
-  }; 
+    setExpandedItems(prev => ({ ...prev, [id]: !prev[id] }));
+    const index = filteredFeed.findIndex(item => String(item.id || '') === id);
+    setFocusedIndex(index);
+  };
 
-  // Get theme-based colors
   const getThemeTextColor = () => {
     switch (theme) {
       case "amber": return "text-amber-400"
@@ -412,24 +310,16 @@ export default function NewsFeed({ filterTerm, refreshTrigger, theme = "amber" }
     }
   }
 
-  // Create helper function for getting sentiment color
-  const getSentimentColor = (sentiment?: string, alpha: number = 1) => {
-    switch (sentiment) {
-      case 'positive': return `rgba(34, 197, 94, ${alpha})`; // green-500 with alpha
-      case 'negative': return `rgba(239, 68, 68, ${alpha})`; // red-500 with alpha
-      default: return `rgba(107, 114, 128, ${alpha})`; // gray-500 with alpha
-    }
+  const getImpactColor = (impact?: number, alpha: number = 1) => {
+    if (impact === undefined) return `rgba(107, 114, 128, ${alpha})`; // gray-500
+    return impact > 0 ? `rgba(34, 197, 94, ${alpha})` : `rgba(239, 68, 68, ${alpha})`; // green-500 or red-500
   };
 
-  // Add Debug button to show underlying errors
-  // Add emergency data loading to ensure data is available
   const handleDebugRefresh = async () => {
     console.log("Emergency data refresh triggered");
     setLoading(true);
     setError("Attempting emergency data refresh...");
-
     try {
-      // Direct fetch with error handling
       const response = await fetch("/api/social-feed");
       if (!response.ok) {
         const errorText = await response.text();
@@ -458,22 +348,18 @@ export default function NewsFeed({ filterTerm, refreshTrigger, theme = "amber" }
     }
   };
 
-  // Add log for errors
   useEffect(() => {
     if (error) addConsoleLog(`Error: ${error}`, 'error');
   }, [error, addConsoleLog]);
 
-  // Add log for deduplication/cluster summary (simulate, since dedupe is server-side)
   useEffect(() => {
     if (feedItems.length > 0) {
       addConsoleLog(`Feed updated: ${feedItems.length} unique items after clustering.`);
     }
   }, [feedItems, addConsoleLog]);
 
-  // --- Clear console log ---
   const clearConsole = () => setConsoleLogs([]);
 
-  // --- Loading State --- 
   if (loading) {
     return (
       <div className="relative p-2 font-mono h-64">
@@ -482,13 +368,12 @@ export default function NewsFeed({ filterTerm, refreshTrigger, theme = "amber" }
             <Loader2 className="h-8 w-8 animate-spin mb-2 text-amber-400" />
             <span className="text-amber-400">Loading News Feed...</span>
             <p className="text-xs text-gray-400 mt-2">This may take 10-15 seconds on first load</p>
-            </div>
+          </div>
         </div>
       </div>
     );
   }
 
-  // When no data is available, show detailed info and recovery option
   if (!loading && feedItems.length === 0 && !filterTerm) {
     return (
       <div className="p-8 flex flex-col items-center">
@@ -502,11 +387,7 @@ export default function NewsFeed({ filterTerm, refreshTrigger, theme = "amber" }
         <div className="flex space-x-4 mt-4">
           <button
             onClick={handleDebugRefresh}
-            className={`px-4 py-2 rounded-md ${
-              theme === "amber" ? "bg-amber-800 hover:bg-amber-700" : 
-              theme === "green" ? "bg-green-800 hover:bg-green-700" : 
-              "bg-blue-800 hover:bg-blue-700"
-            }`}
+            className={`px-4 py-2 rounded-md ${theme === "amber" ? "bg-amber-800 hover:bg-amber-700" : theme === "green" ? "bg-green-800 hover:bg-green-700" : "bg-blue-800 hover:bg-blue-700"}`}
           >
             Emergency Refresh
           </button>
@@ -519,25 +400,19 @@ export default function NewsFeed({ filterTerm, refreshTrigger, theme = "amber" }
     );
   }
 
-  // --- Main Rendering: Table Layout ---
   return (
     <div className={`font-mono bg-black ${getThemeTextColor()} text-xs`}>
-      {/* Header Bar with filter info */}
       <div className={`text-xs ${getThemeAccentColor()} mb-1 border-b border-gray-800 px-2 py-1 flex justify-between items-center sticky top-0 bg-black z-20`}>
         <span>
-          FEED: {filteredFeed.length} items {filterTerm || selectedCategory || selectedSentiment ? 
-            `(Filtered from ${totalCount})` : 
-            `(of ${totalCount})`
-          }
+          FEED: {filteredFeed.length} items {filterTerm || selectedCategory ? `(Filtered from ${totalCount})` : `(of ${totalCount})`}
           {filterTerm && <span className="ml-2">Search: "{filterTerm}"</span>}
           {selectedCategory && <span className="ml-2">Category: {selectedCategory}</span>}
-          {selectedSentiment && <span className="ml-2">Sentiment: {selectedSentiment}</span>}
         </span> 
         <div className="flex items-center space-x-3">
-          {fearGreed && ( 
+          {fearGreed && (
             <span className={`font-semibold ${fearGreed.value_classification === 'Fear' ? 'text-red-500' : 'text-green-500'}`}>
               F&G: {fearGreed.value_classification} ({fearGreed.value})
-            </span> 
+            </span>
           )}
           {error && <span className="text-yellow-500 ml-2 truncate" title={error || "Feed Error"}>WARNING</span>}
           <button 
@@ -550,7 +425,6 @@ export default function NewsFeed({ filterTerm, refreshTrigger, theme = "amber" }
         </div>
       </div>
 
-      {/* Filters row - only shown when filters are on */}
       {showFilters && (
         <div className="flex items-center gap-2 p-2 border-b border-gray-800 bg-gray-900/40">
           <div>
@@ -566,22 +440,7 @@ export default function NewsFeed({ filterTerm, refreshTrigger, theme = "amber" }
               ))}
             </select>
           </div>
-          
-          <div>
-            <label className={`text-xs ${getThemeHeaderColor()} mr-1`}>Sentiment:</label>
-            <select 
-              value={selectedSentiment || ''} 
-              onChange={(e) => setSelectedSentiment(e.target.value as any || null)}
-              className="bg-gray-800 border-none text-xs p-0.5 rounded"
-            >
-              <option value="">All Sentiments</option>
-              <option value="positive">Positive</option>
-              <option value="negative">Negative</option>
-              <option value="neutral">Neutral</option>
-            </select>
-            </div>
-          
-          {(selectedCategory || selectedSentiment) && (
+          {(selectedCategory) && (
             <button 
               onClick={resetFilters}
               className="text-xs px-1 py-0.5 rounded bg-gray-800 hover:bg-gray-700"
@@ -589,10 +448,9 @@ export default function NewsFeed({ filterTerm, refreshTrigger, theme = "amber" }
               Clear Filters
             </button>
           )}
-            </div>
+        </div>
       )}
 
-      {/* Table Container - Allow scrolling */}
       <div 
         className="overflow-y-auto outline-none"
         style={{ height: "calc(100vh - 210px)" }} 
@@ -600,9 +458,8 @@ export default function NewsFeed({ filterTerm, refreshTrigger, theme = "amber" }
         onKeyDown={handleKeyDown}
       >
         <table className="min-w-full table-fixed border-collapse">
-          {/* Table Header - Ensure no whitespace here */}
           <thead className="sticky top-0 bg-gray-900 z-10">
-            <tr>{/* No space before th */}
+            <tr>
               <th className={`p-1 border-b border-gray-700 text-left ${getThemeHeaderColor()} font-semibold w-[55%]`}>Headline</th>
               <th className={`p-1 border-b border-gray-700 text-left ${getThemeHeaderColor()} font-semibold whitespace-nowrap w-[60px]`}>Date</th>
               <th 
@@ -612,17 +469,12 @@ export default function NewsFeed({ filterTerm, refreshTrigger, theme = "amber" }
               >
                 Time
               </th>
-              <th className={`p-1 border-b border-gray-700 text-center ${getThemeHeaderColor()} font-semibold w-[60px]`} title="Sentiment">
-                Sentiment
-              </th>
+              <th className={`p-1 border-b border-gray-700 text-center ${getThemeHeaderColor()} font-semibold w-[60px]`} title="Impact %">Impact</th>
               <th className={`p-1 border-b border-gray-700 text-left ${getThemeHeaderColor()} font-semibold w-[110px]`}>Source</th>
-            </tr>{/* No space after tr */}
+            </tr>
           </thead>
-          {/* Table Body - Use flatMap and ensure NO whitespace */}
           <tbody ref={tableBodyRef} className="divide-y divide-gray-800">
-            {/* Render only the main TR for each item */} 
             {filteredFeed.map((item, index) => {
-              // Create a truly unique key that won't result in [object Object]
               const key = `news-item-${item.id ? String(item.id).replace(/[^\w-]/g, '-') + `-${index}` : `idx-${index}`}`;
               const isExpanded = expandedItems[key] || false;
               const isFocused = index === focusedIndex;
@@ -631,26 +483,26 @@ export default function NewsFeed({ filterTerm, refreshTrigger, theme = "amber" }
               const newsItemDate = new Date(item.publishedAt);
               const thirtyMinutesAgo = new Date(Date.now() - 30 * 60 * 1000);
               const isRecentImpact = item.isPriceImpacting && newsItemDate > thirtyMinutesAgo;
-              let sourceDisplay = item.source; 
-              if (isTelegramPost) { sourceDisplay = item.author || "Telegram"; }
-              let rowStyle = "hover:bg-gray-800/60 cursor-pointer"; // Add cursor-pointer back
-              if (isFocused) { rowStyle += " bg-sky-800/50 outline outline-1 outline-sky-400"; } 
-              if (isRecentImpact) { rowStyle += " text-red-400 font-semibold"; }
+              let sourceDisplay = item.source;
+              if (isTelegramPost) sourceDisplay = item.author || "Telegram";
+              let rowStyle = "hover:bg-gray-800/60 cursor-pointer";
+              if (isFocused) rowStyle += " bg-sky-800/50 outline outline-1 outline-sky-400";
+              if (isRecentImpact) rowStyle += " text-red-400 font-semibold";
 
               return (
                 <React.Fragment key={key}>
                   <tr 
                     ref={el => { rowRefs.current[index] = el; }}
                     className={rowStyle} 
-                    onClick={() => toggleExpand(key)} // Add click handler
+                    onClick={() => toggleExpand(key)}
                     aria-selected={isFocused}
                     aria-expanded={isExpanded}
                   >
                     <td className="p-1 align-top">
-            <a
-              href={item.url}
-              target="_blank"
-              rel="noopener noreferrer"
+                      <a
+                        href={item.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
                         className={`hover:underline ${isRecentImpact ? 'text-red-400' : getThemeAccentColor()}`} 
                         title={item.title || "View source"}
                         onClick={(e) => e.stopPropagation()}
@@ -660,18 +512,23 @@ export default function NewsFeed({ filterTerm, refreshTrigger, theme = "amber" }
                     </td>
                     <td className={`p-1 whitespace-nowrap align-top ${getThemeTextColor()}`}>{formatDate(item.publishedAt)}</td>
                     <td className={`p-1 whitespace-nowrap align-top ${getThemeTextColor()}`} title={new Date(item.publishedAt).toLocaleString()}>{timeDisplayMode === 'relative' ? formatRelativeTime(item.publishedAt) : formatTime(item.publishedAt)}</td>
-                    {/* Sentiment Column - Clean minimal version */}
                     <td 
                       className="p-1 text-center"
-                      title={`Sentiment: ${item.sentiment || 'Unknown'}${item.sentimentConfidence ? ` (${item.sentimentConfidence}% confidence)` : ''}`}
+                      style={{ color: getImpactColor(item.impactPercentage) }}
+                      title={`Impact: ${item.impactPercentage !== undefined ? `${item.impactPercentage}%` : 'N/A'}`}
                     >
-                      {item.sentiment === 'positive' ? (
-                        <TrendingUp className="w-3 h-3 inline text-green-500" />
-                      ) : item.sentiment === 'negative' ? (
-                        <TrendingDown className="w-3 h-3 inline text-red-500" />
+                      {item.impactPercentage !== undefined ? (
+                        item.impactPercentage > 0 ? (
+                          <TrendingUp className="w-3 h-3 inline" />
+                        ) : item.impactPercentage < 0 ? (
+                          <TrendingDown className="w-3 h-3 inline" />
+                        ) : (
+                          <CircleDot className="w-3 h-3 inline" />
+                        )
                       ) : (
-                        <CircleDot className="w-3 h-3 inline text-gray-500" />
+                        <CircleDot className="w-3 h-3 inline" />
                       )}
+                      {item.impactPercentage !== undefined && `${item.impactPercentage}%`}
                     </td>
                     <td className="p-1 align-top" title={isMultiSource ? item.aggregatedSources?.join(", ") : sourceDisplay || "N/A"}>
                       <div className="flex items-center">
@@ -681,13 +538,10 @@ export default function NewsFeed({ filterTerm, refreshTrigger, theme = "amber" }
                       </div>
                     </td>
                   </tr>
-                  
-                  {/* Expansion row - enhanced with categories but simpler design */}
                   {isExpanded && (
                     <tr key={`${key}-detail`} className="bg-gray-900/30">
                       <td colSpan={5} className="p-2 text-xs">
                         <div className="pl-2 border-l border-gray-700">
-                          {/* Category tags */}
                           {item.categories && item.categories.length > 0 && (
                             <div className="mb-2">
                               <div className="flex flex-wrap gap-1">
@@ -706,16 +560,12 @@ export default function NewsFeed({ filterTerm, refreshTrigger, theme = "amber" }
                               </div>
                             </div>
                           )}
-                          
-                          {/* Summary section */}
                           {item.summary && (
                             <div className="mb-3">
                               <div className={`${getThemeAccentColor()} font-semibold mb-1`}>Summary:</div>
                               <div className={getThemeTextColor()}>{item.summary}</div>
                             </div>
                           )}
-                          
-                          {/* Similar sources section - Enhanced to be more prominent */}
                           {isMultiSource && item.aggregatedSources && item.aggregatedSources.length > 0 && (
                             <div className="mb-3">
                               <div className={`${getThemeAccentColor()} font-semibold mb-1`}>
@@ -734,8 +584,6 @@ export default function NewsFeed({ filterTerm, refreshTrigger, theme = "amber" }
                               </div>
                             </div>
                           )}
-                          
-                          {/* Similar titles section - Show variations */}
                           {item.similarTitles && item.similarTitles.length > 0 && (
                             <div className="mb-3">
                               <div className={`${getThemeAccentColor()} font-semibold mb-1`}>Similar Headlines:</div>
@@ -749,23 +597,20 @@ export default function NewsFeed({ filterTerm, refreshTrigger, theme = "amber" }
                               </ul>
                             </div>
                           )}
-                          
-                          {/* Sentiment info - at the bottom and simplified */}
                           <div className="flex items-center gap-2 pt-1 border-t border-gray-700 mt-1">
-                            <div className={`text-xs ${getThemeHeaderColor()}`}>Sentiment:</div>
-                            <span className={`text-xs ${
-                              item.sentiment === 'positive' ? 'text-green-500' : 
-                              item.sentiment === 'negative' ? 'text-red-500' : 
-                              'text-gray-500'
-                            }`}>
-                              {item.sentiment === 'positive' ? (
-                                <><TrendingUp className="w-3 h-3 inline mr-1" />Positive</>
-                              ) : item.sentiment === 'negative' ? (
-                                <><TrendingDown className="w-3 h-3 inline mr-1" />Negative</>
+                            <div className={`text-xs ${getThemeHeaderColor()}`}>Impact:</div>
+                            <span className={`text-xs ${item.impactPercentage !== undefined ? (item.impactPercentage > 0 ? 'text-green-500' : 'text-red-500') : 'text-gray-500'}`}>
+                              {item.impactPercentage !== undefined ? (
+                                item.impactPercentage > 0 ? (
+                                  <><TrendingUp className="w-3 h-3 inline mr-1" />+{item.impactPercentage}%</>
+                                ) : item.impactPercentage < 0 ? (
+                                  <><TrendingDown className="w-3 h-3 inline mr-1" />{item.impactPercentage}%</>
+                                ) : (
+                                  <><CircleDot className="w-3 h-3 inline mr-1" />0%</>
+                                )
                               ) : (
-                                <><CircleDot className="w-3 h-3 inline mr-1" />Neutral</>
+                                <><CircleDot className="w-3 h-3 inline mr-1" />N/A</>
                               )}
-                              {item.sentimentConfidence && ` (${item.sentimentConfidence}%)`}
                             </span>
                           </div>
                         </div>
@@ -775,15 +620,13 @@ export default function NewsFeed({ filterTerm, refreshTrigger, theme = "amber" }
                 </React.Fragment>
               );
             })}
-          </tbody>{/* No space */}
+          </tbody>
         </table>
-        {/* No filter results message */}
         {filteredFeed.length === 0 && feedItems.length > 0 && (
           <div className={`p-8 text-center ${getThemeTextColor()}`}>
             <div className="mb-2 text-xl">No matching results</div>
             {filterTerm && <div className="mb-2">Search: "{filterTerm}"</div>}
             {selectedCategory && <div className="mb-2">Category: {selectedCategory}</div>}
-            {selectedSentiment && <div className="mb-2">Sentiment: {selectedSentiment}</div>}
             <button 
               onClick={resetFilters}
               className={`mt-2 px-3 py-1 rounded-md ${
@@ -797,10 +640,9 @@ export default function NewsFeed({ filterTerm, refreshTrigger, theme = "amber" }
           </div>
         )}
       </div>
-      {/* Console Panel */}
       <div className="mt-2 bg-black border-t border-gray-800 p-2 font-mono text-xs text-left max-h-32 overflow-y-auto rounded shadow-inner">
         <div className="flex justify-between items-center mb-1">
-          <span className="text-amber-400 font-semibold">RRA NEWS AGGREGATOR CONSOLE</span>
+          <span className="text-amber-400 font-semibold">NEWS AGGREGATOR CONSOLE</span>
           <button onClick={clearConsole} className="text-xs px-2 py-0.5 rounded bg-gray-800 hover:bg-gray-700 text-gray-300">Clear</button>
         </div>
         <ul className="space-y-0.5">
