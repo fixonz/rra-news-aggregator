@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { extractTickers } from "../../../lib/ticker-mapping";
 
 interface PriceData {
   symbol: string;
@@ -207,7 +208,7 @@ export async function GET() {
             severity: "high",
             title: "Regulatory Development",
             message: news.title ?? "",
-            affectedAssets: extractMentionedAssets(
+            affectedAssets: extractTickers(
               (news.title ?? "") + " " + (news.summary ?? "")
             ),
             timestamp: news.publishedAt ?? new Date().toISOString(),
@@ -297,64 +298,4 @@ export async function GET() {
       { status: 500 }
     );
   }
-}
-
-// Helper function to extract mentioned cryptocurrency assets from text
-function extractMentionedAssets(text: string): string[] {
-  const assets = [
-    "BTC",
-    "ETH",
-    "BNB",
-    "SOL",
-    "ADA",
-    "AVAX",
-    "DOT",
-    "LINK",
-    "MATIC",
-    "UNI",
-    "LTC",
-    "DOGE",
-    "SHIB",
-    "XRP",
-    "TRX",
-  ];
-  const mentioned: string[] = [];
-  const lowerText = text.toLowerCase();
-
-  // Check for symbol mentions
-  assets.forEach((asset) => {
-    if (
-      lowerText.includes(asset.toLowerCase()) ||
-      lowerText.includes("$" + asset.toLowerCase())
-    ) {
-      mentioned.push(asset);
-    }
-  });
-
-  // Check for name mentions
-  const nameMap: Record<string, string> = {
-    bitcoin: "BTC",
-    ethereum: "ETH",
-    binance: "BNB",
-    solana: "SOL",
-    cardano: "ADA",
-    avalanche: "AVAX",
-    polkadot: "DOT",
-    chainlink: "LINK",
-    polygon: "MATIC",
-    uniswap: "UNI",
-    litecoin: "LTC",
-    dogecoin: "DOGE",
-    shiba: "SHIB",
-    ripple: "XRP",
-    tron: "TRX",
-  };
-
-  Object.entries(nameMap).forEach(([name, symbol]) => {
-    if (lowerText.includes(name) && !mentioned.includes(symbol)) {
-      mentioned.push(symbol);
-    }
-  });
-
-  return mentioned;
 }

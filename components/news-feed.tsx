@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import { Loader2, Send, Hourglass, ArrowUp, ArrowDown, Minus, TrendingUp, TrendingDown, CircleDot } from "lucide-react"
+import { extractTickers, fetchHistoricalPrice } from "../lib/ticker-mapping";
 
 interface NewsItem {
   id: string
@@ -48,6 +49,7 @@ interface FeedItem {
   similarTitles?: { source: string, title: string }[];
   categories?: string[];
   impactPercentage?: number; // Replace sentiment with impact percentage
+  tickers?: { id: string, name: string }[]; // New field for tickers
 }
 
 interface NewsFeedProps {
@@ -357,6 +359,38 @@ export default function NewsFeed({ filterTerm, refreshTrigger, theme = "amber" }
       addConsoleLog(`Feed updated: ${feedItems.length} unique items after clustering.`);
     }
   }, [feedItems, addConsoleLog]);
+
+  // Add a useEffect to calculate impact for each news item
+  useEffect(() => {
+    async function calculateImpacts() {
+      const updatedFeed = await Promise.all(feedItems.map(async (item) => {
+        if (item.itemType !== 'news') return item;
+        const tickers = extractTickers(item.title + ' ' + (item.summary || ''));
+        if (tickers.length === 0) return item;
+        // For now, use the first ticker found
+        const { id: coinGeckoId } = tickers[0];
+        const newsTimestamp = Math.floor(new Date(item.publishedAt).getTime() / 1000);
+        const historicalPrice = await fetchHistoricalPrice(coinGeckoId, newsTimestamp);
+        // Use the latest price from MCP or fallback to current price (if available in item)
+        // For now, fallback to impactPercentage if already present
+        let currentPrice = item.impactPercentage !== undefined ? undefined : null;
+        // TODO: Integrate MCP live price here for real-time updates
+        // If you have a current price, calculate impact
+        let impact = undefined;
+        if (historicalPrice && currentPrice) {
+          impact = Math.round(((currentPrice - historicalPrice) / historicalPrice) * 100);
+        }
+        return {
+          ...item,
+          impactPercentage: impact !== undefined ? impact : item.impactPercentage,
+          tickers,
+        };
+      }));
+      setFeedItems(updatedFeed);
+    }
+    if (feedItems.length > 0) calculateImpacts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [feedItems]);
 
   const clearConsole = () => setConsoleLogs([]);
 
