@@ -81,6 +81,7 @@ export async function GET(request: Request) {
       alerts,
       correlations,
       marketSummary,
+      coins: prices.map((coin: any) => ({ symbol: coin.symbol, change24h: coin.change24h })),
       timestamp: new Date().toISOString()
     });
     

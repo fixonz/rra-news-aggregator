@@ -6,9 +6,11 @@ interface MarketSummary {
   majorMovers: string[];
   totalMarketCap: number;
   btcDominance?: number;
-  coinsUp?: number;
-  coinsDown?: number;
-  avgChange?: number;
+}
+
+interface CoinChange {
+  symbol: string;
+  change24h: number;
 }
 
 const sentimentConfig = {
@@ -31,6 +33,7 @@ const sentimentConfig = {
 
 export default function MarketAnalysis() {
   const [summary, setSummary] = useState<MarketSummary | null>(null);
+  const [coins, setCoins] = useState<CoinChange[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -42,15 +45,8 @@ export default function MarketAnalysis() {
         const res = await fetch("/api/price-analysis");
         if (!res.ok) throw new Error(`API error: ${res.status}`);
         const data = await res.json();
-        // Calculate highlights
-        let coinsUp = 0, coinsDown = 0, avgChange = 0;
-        if (data.alerts && Array.isArray(data.alerts)) {
-          const changes = data.alerts.map((a: any) => a.change24h).filter((v: any) => typeof v === 'number');
-          coinsUp = changes.filter((v: number) => v > 0).length;
-          coinsDown = changes.filter((v: number) => v < 0).length;
-          avgChange = changes.length > 0 ? changes.reduce((a: number, b: number) => a + b, 0) / changes.length : 0;
-        }
-        setSummary({ ...data.marketSummary, coinsUp, coinsDown, avgChange });
+        setSummary(data.marketSummary);
+        setCoins(data.coins || []);
       } catch (e: any) {
         setError(e.message || "Unknown error");
       } finally {
@@ -65,6 +61,9 @@ export default function MarketAnalysis() {
   if (!summary) return <div className="p-4 text-muted-foreground">No market analysis available.</div>;
 
   const sentiment = sentimentConfig[summary.overallSentiment];
+  const coinsUp = coins.filter(c => c.change24h > 0).length;
+  const coinsDown = coins.filter(c => c.change24h < 0).length;
+  const avgChange = coins.length > 0 ? coins.reduce((a, c) => a + c.change24h, 0) / coins.length : 0;
 
   return (
     <div className="w-full flex justify-center my-6">
@@ -85,10 +84,10 @@ export default function MarketAnalysis() {
             <div className="text-lg font-semibold text-gray-200 mb-1">Market Highlights</div>
             <div className="flex flex-col gap-1 text-sm text-gray-300">
               <div>
-                <span className="font-bold text-green-400">{summary.coinsUp}</span> up, <span className="font-bold text-red-400">{summary.coinsDown}</span> down
+                <span className="font-bold text-green-400">{coinsUp}</span> up, <span className="font-bold text-red-400">{coinsDown}</span> down
               </div>
               <div>
-                Avg 24h Change: <span className={summary.avgChange > 0 ? 'text-green-400' : summary.avgChange < 0 ? 'text-red-400' : 'text-yellow-300'}>{summary.avgChange?.toFixed(2)}%</span>
+                Avg 24h Change: <span className={avgChange > 0 ? 'text-green-400' : avgChange < 0 ? 'text-red-400' : 'text-yellow-300'}>{avgChange.toFixed(2)}%</span>
               </div>
             </div>
           </div>
