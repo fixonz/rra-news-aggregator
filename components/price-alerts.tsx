@@ -9,6 +9,7 @@ interface PriceAlert {
   alertType: 'spike' | 'drop' | 'volume' | 'target' | 'time'
   triggered: boolean
   value: number
+  impactPercentage?: number // New field for impact
 }
 
 const iconMap = {
@@ -21,19 +22,83 @@ const iconMap = {
 
 export default function PriceAlerts() {
   const [alerts, setAlerts] = useState<PriceAlert[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     const fetchAlerts = async () => {
-      // Replace with actual API call or data source
-      const mockAlerts: PriceAlert[] = [
-        { symbol: "BTC", coinId: "bitcoin", alertType: "spike", triggered: false, value: 50000 },
-        { symbol: "ETH", coinId: "ethereum", alertType: "drop", triggered: true, value: 3000 },
-      ]
-      setAlerts(mockAlerts)
+      setLoading(true)
+      setError(null)
+      try {
+        // Simulate MCP connection (replace with actual MCP client integration)
+        const eventSource = new EventSource("https://mcp.api.coingecko.com/sse")
+        eventSource.onmessage = (event) => {
+          const data = JSON.parse(event.data)
+          // Example: Process MCP data (adjust based on actual MCP response structure)
+          if (data.type === "price_update") {
+            const { id, symbol, current_price, market_cap, volume_24h } = data
+            const previousAlerts = alerts || []
+            const existingAlert = previousAlerts.find(a => a.coinId === id)
+
+            // Calculate impact percentage (simplified: % change from a baseline)
+            const baselinePrice = existingAlert?.value || current_price // Use previous value or current as baseline
+            const impact = ((current_price - baselinePrice) / baselinePrice) * 100
+
+            // Define alert conditions
+            const newAlerts = previousAlerts.filter(a => a.coinId !== id) // Remove old alert for this coin
+            if (impact > 5) {
+              newAlerts.push({
+                symbol,
+                coinId: id,
+                alertType: "spike",
+                triggered: true,
+                value: current_price,
+                impactPercentage: Math.round(impact)
+              })
+            } else if (impact < -5) {
+              newAlerts.push({
+                symbol,
+                coinId: id,
+                alertType: "drop",
+                triggered: true,
+                value: current_price,
+                impactPercentage: Math.round(impact)
+              })
+            } else {
+              newAlerts.push({
+                symbol,
+                coinId: id,
+                alertType: existingAlert?.alertType || "spike", // Default to spike if no previous
+                triggered: false,
+                value: current_price,
+                impactPercentage: Math.round(impact)
+              })
+            }
+            setAlerts(newAlerts)
+          }
+        }
+        eventSource.onerror = () => {
+          setError("Failed to connect to CoinGecko MCP Server")
+          eventSource.close()
+        }
+      } catch (err) {
+        setError(`Error fetching data: ${err instanceof Error ? err.message : String(err)}`)
+      } finally {
+        setLoading(false)
+      }
     }
 
     fetchAlerts()
+
+    // Cleanup on unmount
+    return () => {
+      const eventSource = new EventSource("https://mcp.api.coingecko.com/sse")
+      eventSource.close()
+    }
   }, [])
+
+  if (loading) return <div className="p-4 text-muted-foreground">Loading alerts...</div>
+  if (error) return <div className="p-4 text-red-500">{error}</div>
 
   return (
     <div className="p-4 space-y-4">
@@ -48,7 +113,7 @@ export default function PriceAlerts() {
             <div>
               <div className="font-medium">{alert.symbol} - {alert.alertType.toUpperCase()}</div>
               <div className="text-sm text-muted-foreground">
-                {alert.triggered ? "Triggered" : "Waiting"} · Value: {alert.value}
+                {alert.triggered ? "Triggered" : "Waiting"} · Value: {alert.value} · Impact: {alert.impactPercentage !== undefined ? `${alert.impactPercentage}%` : 'N/A'}
               </div>
             </div>
           </li>
