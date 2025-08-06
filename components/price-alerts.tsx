@@ -4,12 +4,12 @@ import { useState, useEffect } from "react"
 import { TrendingUp, TrendingDown, AlertTriangle, Volume2, Target, Clock } from "lucide-react"
 
 interface PriceAlert {
-  symbol: string
-  coinId: string
-  alertType: 'spike' | 'drop' | 'volume' | 'target' | 'time'
-  triggered: boolean
-  value: number
-  impactPercentage?: number
+  symbol: string,
+  coinId: string,
+  alertType: 'spike' | 'drop' | 'volume' | 'target' | 'time',
+  triggered: boolean,
+  value: number,
+  impactPercentage?: number,
 }
 
 const iconMap = {
