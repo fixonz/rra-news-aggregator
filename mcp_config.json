@@ -1,0 +1,9 @@
+{
+  "mcp": {
+    "endpoint": "https://mcp.api.coingecko.com/sse",
+    "type": "sse",
+    "autoConnect": true,
+    "retryOnFailure": true,
+    "rateLimit": 1000 // Adjust based on public server limits
+  }
+}
