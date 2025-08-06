@@ -176,10 +176,16 @@ export default function CryptoTerminal() {
         </div>
       </div>
 
-      {importantAlert && (
+      {importantAlert && importantAlert !== 'Loading MCP data... Please wait.' && (
         <div className="bg-red-700 text-white p-1 flex items-center justify-center text-xs border-b border-red-500">
           <AlertTriangle className="mr-2 h-3 w-3 flex-shrink-0" />
           <span className="font-semibold truncate">{importantAlert}</span>
+        </div>
+      )}
+      {importantAlert === 'Loading MCP data... Please wait.' && (
+        <div className="bg-black text-amber-300 p-1 flex items-center justify-center text-xs border-b border-amber-700 gap-2">
+          <img src="https://www.coingecko.com/favicon.ico" alt="CoinGecko" className="h-5 w-5" />
+          <span className="font-semibold">Powered by CoinGecko MCP</span>
         </div>
       )}
 
