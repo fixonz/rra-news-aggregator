@@ -222,4 +222,98 @@ export async function GET() {
           summary: "",
           isPriceImpacting: post.content?.toLowerCase().includes("bitcoin") || false,
           author: post.author,
-          authorId:
+          authorId: post.authorId,
+          itemType: "social",
+          sentiment: sentimentResult.sentiment,
+          sentimentConfidence: sentimentResult.confidence,
+          sentimentTerms: sentimentResult.primaryTerms,
+          categories: categorizeContent(post.content),
+        };
+      });
+    }
+
+    let rssPosts: FeedItem[] = [];
+    if (rssRes.status === "fulfilled" && rssRes.value.ok) {
+      const data = await rssRes.value.json();
+      rssPosts = (data.posts || []).map((post: any): FeedItem => {
+        const sentimentResult = analyzeSentiment(post.title || post.summary || "");
+        return {
+          id: post.id,
+          title: post.title,
+          source: post.source,
+          url: post.link,
+          publishedAt: post.pubDate,
+          summary: post.summary,
+          isPriceImpacting: false,
+          itemType: "news",
+          sentiment: sentimentResult.sentiment,
+          sentimentConfidence: sentimentResult.confidence,
+          sentimentTerms: sentimentResult.primaryTerms,
+          categories: categorizeContent(post.title),
+        };
+      });
+    }
+
+    // Combine & sort posts by published date descending, limit to MAX_ITEMS_TO_PROCESS
+    let combinedPosts = [...telegramPosts, ...rssPosts]
+      .filter((p) => p.title && p.publishedAt)
+      .sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime())
+      .slice(0, MAX_ITEMS_TO_PROCESS);
+
+    // Cluster similar posts based on normalized title similarity threshold (e.g., 0.5)
+    const clusters: FeedItem[][] = [];
+
+    for (const post of combinedPosts) {
+      let placed = false;
+      for (const cluster of clusters) {
+        if (getSimilarityScore(post.title, cluster[0].title) >= 0.5) {
+          cluster.push(post);
+          placed = true;
+          break;
+        }
+      }
+      if (!placed) clusters.push([post]);
+    }
+
+    // Sort each cluster by date descending and then sort clusters by their latest post date
+    clusters.forEach((cluster) => cluster.sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime()));
+    clusters.sort((a, b) => new Date(b[0].publishedAt).getTime() - new Date(a[0].publishedAt).getTime());
+
+    // Flatten clusters: create summary posts with aggregated info
+    const aggregatedFeed: FeedItem[] = clusters.slice(0, MAX_ITEMS_TO_RETURN).map((cluster) => {
+      if (cluster.length === 1) return cluster[0];
+
+      // Create aggregate post based on first cluster item
+      const first = cluster[0];
+      const sources = Array.from(new Set(cluster.map((p) => p.source)));
+      const uniqueTitles = cluster.map((p) => ({ source: p.source, title: p.title }));
+
+      // Aggregate sentiment: pick highest confidence sentiment among cluster
+      let bestSentiment = first.sentiment || "neutral";
+      let bestConfidence = first.sentimentConfidence || 0;
+      cluster.forEach((p) => {
+        if ((p.sentimentConfidence || 0) > bestConfidence) {
+          bestSentiment = p.sentiment || "neutral";
+          bestConfidence = p.sentimentConfidence || 0;
+        }
+      });
+
+      return {
+        ...first,
+        sourceCount: sources.length,
+        aggregatedSources: sources,
+        similarTitles: uniqueTitles,
+        sentiment: bestSentiment,
+        sentimentConfidence: bestConfidence,
+      };
+    });
+
+    // Cache results
+    socialFeedCache = { timestamp: Date.now(), data: aggregatedFeed };
+
+    return NextResponse.json({ posts: aggregatedFeed, status: "fresh" });
+  } catch (error) {
+    console.error("Error fetching social feed:", error);
+    return NextResponse.json({ posts: [], status: "error", error: String(error) }, { status: 500 });
+  }
+}
