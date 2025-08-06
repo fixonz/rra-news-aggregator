@@ -26,13 +26,7 @@ export default function PriceAlerts() {
   useEffect(() => {
     // Simulated fetch of alert data
     const fetchAlerts = async () => {
-      const fakeData: PriceAlert[] = [
-        { symbol: "BTC", coinId: "bitcoin", alertType: "spike", triggered: true, value: 5 },
-        { symbol: "ETH", coinId: "ethereum", alertType: "drop", triggered: false, value: -3 },
-        { symbol: "SOL", coinId: "solana", alertType: "volume", triggered: true, value: 12000 },
-      ]
-      setAlerts(fakeData)
-    }
+     
 
     fetchAlerts()
   }, [])
