@@ -6,6 +6,7 @@ import NewsFeed from "@/components/news-feed"
 import PriceTicker from "@/components/price-ticker"
 import WorldClock from "@/components/world-clock"
 import { AlertTriangle, RefreshCw, Moon, Sun, Search, Settings } from "lucide-react"
+import MarketAnalysis from "@/components/market-analysis"
 
 export default function CryptoTerminal() {
   const [importantAlert, setImportantAlert] = useState<string | null>(null)
@@ -215,6 +216,7 @@ export default function CryptoTerminal() {
 
       <div className="flex flex-1 overflow-hidden">
         <div className="w-full overflow-y-auto border-l border-gray-800">
+          <MarketAnalysis />
           <NewsFeed filterTerm={filterTerm} refreshTrigger={refreshTrigger} theme={theme} />
         </div>
       </div>
