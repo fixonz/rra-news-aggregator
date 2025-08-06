@@ -1,4 +1,3 @@
-// components/price-alerts.tsx
 "use client"
 
 import { useState, useEffect } from "react"
@@ -24,9 +23,14 @@ export default function PriceAlerts() {
   const [alerts, setAlerts] = useState<PriceAlert[]>([])
 
   useEffect(() => {
-    // Simulated fetch of alert data
     const fetchAlerts = async () => {
-     
+      // Replace with actual API call or data source
+      const mockAlerts: PriceAlert[] = [
+        { symbol: "BTC", coinId: "bitcoin", alertType: "spike", triggered: false, value: 50000 },
+        { symbol: "ETH", coinId: "ethereum", alertType: "drop", triggered: true, value: 3000 },
+      ]
+      setAlerts(mockAlerts)
+    }
 
     fetchAlerts()
   }, [])
