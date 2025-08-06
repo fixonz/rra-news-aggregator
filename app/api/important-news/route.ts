@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { extractTickers } from "../../../lib/ticker-mapping";
+import { getMcpPrices } from '../../../lib/mcp-client';
 
 interface PriceData {
   symbol: string;
@@ -26,21 +27,31 @@ interface ImportantNewsAlert {
 
 export async function GET() {
   try {
+    // Use MCP prices
+    const { prices: mcpPrices, ready } = getMcpPrices();
+    if (!ready || Object.keys(mcpPrices).length === 0) {
+      return NextResponse.json({
+        importantNews: 'Loading MCP data... Please wait.',
+        alerts: [],
+        summary: {},
+        timestamp: new Date().toISOString(),
+      });
+    }
+    // Convert MCP prices to PriceData[]
+    const prices = Object.entries(mcpPrices).map(([id, v]) => ({
+      symbol: id.toUpperCase(),
+      price: v.price,
+      change24h: v.change24h,
+      coinGeckoId: id,
+    }));
+
+    // Fetch recent news
     const baseUrl =
       process.env.NEXT_PUBLIC_APP_URL ||
       (process.env.VERCEL_URL
         ? `https://${process.env.VERCEL_URL}`
         : "http://localhost:3000");
 
-    // Fetch current prices
-    const priceResponse = await fetch(`${baseUrl}/api/crypto-prices`);
-    if (!priceResponse.ok) {
-      throw new Error(`Failed to fetch prices: ${priceResponse.status}`);
-    }
-    const priceJson = await priceResponse.json();
-    const prices = Array.isArray(priceJson.prices) ? priceJson.prices : [];
-
-    // Fetch recent news
     const newsResponse = await fetch(`${baseUrl}/api/rss-news`);
     const newsData = newsResponse.ok
       ? await newsResponse.json()
@@ -210,7 +221,7 @@ export async function GET() {
             message: news.title ?? "",
             affectedAssets: extractTickers(
               (news.title ?? "") + " " + (news.summary ?? "")
-            ),
+            ).map((ticker) => ticker.symbol),
             timestamp: news.publishedAt ?? new Date().toISOString(),
             source: news.source,
             relatedNewsId: news.id,

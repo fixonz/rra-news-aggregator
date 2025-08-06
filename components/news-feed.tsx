@@ -443,11 +443,6 @@ export default function NewsFeed({ filterTerm, refreshTrigger, theme = "amber" }
           {selectedCategory && <span className="ml-2">Category: {selectedCategory}</span>}
         </span> 
         <div className="flex items-center space-x-3">
-          {fearGreed && (
-            <span className={`font-semibold ${fearGreed.value_classification === 'Fear' ? 'text-red-500' : 'text-green-500'}`}>
-              F&G: {fearGreed.value_classification} ({fearGreed.value})
-            </span>
-          )}
           {error && <span className="text-yellow-500 ml-2 truncate" title={error || "Feed Error"}>WARNING</span>}
           <button 
             onClick={toggleFilters}
