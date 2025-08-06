@@ -4,6 +4,6 @@
     "type": "sse",
     "autoConnect": true,
     "retryOnFailure": true,
-    "rateLimit": 1000 // Adjust based on public server limits
+    "rateLimit": 1000 
   }
 }
