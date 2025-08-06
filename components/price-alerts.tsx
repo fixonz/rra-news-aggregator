@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { TrendingUp, TrendingDown, AlertTriangle, Volume2, Target, Clock } from "lucide-react"
+import * as mcp from "mcp-remote" // Install with: npm install mcp-remote
 
 interface PriceAlert {
   symbol: string
@@ -9,7 +10,7 @@ interface PriceAlert {
   alertType: 'spike' | 'drop' | 'volume' | 'target' | 'time'
   triggered: boolean
   value: number
-  impactPercentage?: number // New field for impact
+  impactPercentage?: number
 }
 
 const iconMap = {
@@ -30,71 +31,74 @@ export default function PriceAlerts() {
       setLoading(true)
       setError(null)
       try {
-        // Simulate MCP connection (replace with actual MCP client integration)
-        const eventSource = new EventSource("https://mcp.api.coingecko.com/sse")
-        eventSource.onmessage = (event) => {
-          const data = JSON.parse(event.data)
-          // Example: Process MCP data (adjust based on actual MCP response structure)
-          if (data.type === "price_update") {
-            const { id, symbol, current_price, market_cap, volume_24h } = data
-            const previousAlerts = alerts || []
-            const existingAlert = previousAlerts.find(a => a.coinId === id)
+        // Load mcp_config.json (adjust path based on location)
+        const response = await fetch("/config/mcp_config.json") // Use relative path or import
+        const config = await response.json()
+        const mcpEndpoint = config.mcp.endpoint || "https://mcp.api.coingecko.com/sse"
 
-            // Calculate impact percentage (simplified: % change from a baseline)
-            const baselinePrice = existingAlert?.value || current_price // Use previous value or current as baseline
-            const impact = ((current_price - baselinePrice) / baselinePrice) * 100
+        // Initialize MCP client with config
+        const client = new mcp.Client({ endpoint: mcpEndpoint })
+        await client.connect()
 
-            // Define alert conditions
-            const newAlerts = previousAlerts.filter(a => a.coinId !== id) // Remove old alert for this coin
-            if (impact > 5) {
-              newAlerts.push({
-                symbol,
-                coinId: id,
-                alertType: "spike",
-                triggered: true,
-                value: current_price,
-                impactPercentage: Math.round(impact)
-              })
-            } else if (impact < -5) {
-              newAlerts.push({
-                symbol,
-                coinId: id,
-                alertType: "drop",
-                triggered: true,
-                value: current_price,
-                impactPercentage: Math.round(impact)
-              })
-            } else {
-              newAlerts.push({
-                symbol,
-                coinId: id,
-                alertType: existingAlert?.alertType || "spike", // Default to spike if no previous
-                triggered: false,
-                value: current_price,
-                impactPercentage: Math.round(impact)
-              })
-            }
-            setAlerts(newAlerts)
+        // Listen for price updates
+        client.on("price_update", (data) => {
+          const { id, symbol, current_price, market_cap, volume_24h } = data
+          const previousAlerts = alerts || []
+          const existingAlert = previousAlerts.find(a => a.coinId === id)
+
+          // Calculate impact percentage
+          const baselinePrice = existingAlert?.value || current_price
+          const impact = ((current_price - baselinePrice) / baselinePrice) * 100
+
+          // Define alert conditions
+          const newAlerts = previousAlerts.filter(a => a.coinId !== id)
+          if (impact > 5) {
+            newAlerts.push({
+              symbol,
+              coinId: id,
+              alertType: "spike",
+              triggered: true,
+              value: current_price,
+              impactPercentage: Math.round(impact)
+            })
+          } else if (impact < -5) {
+            newAlerts.push({
+              symbol,
+              coinId: id,
+              alertType: "drop",
+              triggered: true,
+              value: current_price,
+              impactPercentage: Math.round(impact)
+            })
+          } else {
+            newAlerts.push({
+              symbol,
+              coinId: id,
+              alertType: existingAlert?.alertType || "spike",
+              triggered: false,
+              value: current_price,
+              impactPercentage: Math.round(impact)
+            })
           }
-        }
-        eventSource.onerror = () => {
-          setError("Failed to connect to CoinGecko MCP Server")
-          eventSource.close()
+          setAlerts(newAlerts)
+        })
+
+        client.on("error", (err) => {
+          setError(`MCP Error: ${err.message}`)
+        })
+
+        // Cleanup on unmount
+        return () => {
+          client.disconnect()
         }
       } catch (err) {
-        setError(`Error fetching data: ${err instanceof Error ? err.message : String(err)}`)
+        setError(`Error initializing MCP: ${err instanceof Error ? err.message : String(err)}`)
       } finally {
         setLoading(false)
       }
     }
 
     fetchAlerts()
-
-    // Cleanup on unmount
-    return () => {
-      const eventSource = new EventSource("https://mcp.api.coingecko.com/sse")
-      eventSource.close()
-    }
   }, [])
 
   if (loading) return <div className="p-4 text-muted-foreground">Loading alerts...</div>
